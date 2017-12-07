@@ -42,34 +42,30 @@ function getRepoData(org, repo) {
 
     body = JSON.parse(body);
     
-    let date = new Date().setHours(0,0,0,0);
-
     let stars = body.stargazers_count;
     let forks = body.forks_count;
     let watchers = body.subscribers_count;
+    let document = {};
 
-    let stats = {
+    document[repo] = {
       "watchers": watchers,
       "stars": stars,
       "forks": forks          
-    }
-
-    collection.findOne({_id: date}).then(doc => {
-      let document = {};
-      document[repo] = stats;
-      if (!doc) {
-        document["_id"] = date;
-        document[repo] = stats;
-        collection.insertOne(document);
-      } else {
-        document[repo] = stats;
-        collection.updateOne({_id: date}, {$set: document});
-      }
-    });    
+    };
+    
+    writeDocument(document);    
   })
 
 }
 
 function writeDocument (document) {
-
+  let date = new Date().setHours(0,0,0,0);
+  collection.findOne({_id: date}).then(doc => {    
+    if (!doc) {
+      document["_id"] = date;    
+      collection.insertOne(document);
+    } else {
+      collection.updateOne({_id: date}, {$set: document});
+    }
+  });
 }
