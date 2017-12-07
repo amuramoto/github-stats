@@ -1,11 +1,11 @@
 const request = require('request');
-
 const mongodb = require('mongodb');
-const mongodb_url = 'mongodb://localhost:27017/fb-devrel';
+const env = require('./env');
+const repos = env.repos;
 
+const mongodb_url = 'mongodb://localhost:27017/fb-devrel';
 const github_api_base_url = 'https://api.github.com';
 
-var db;
 var collection;
 
 mongodb.connect(mongodb_url, (err, mongo_client) => {
@@ -14,12 +14,15 @@ mongodb.connect(mongodb_url, (err, mongo_client) => {
     console.log('Error connecting to Mongo: ' + err);
   }
 
+  let db = mongo_client.db('fb-devrel');
   console.log("Connected successfully to server");
   
-  db = mongo_client.db('fb-devrel');
+  
   db.collection('github', (err, coll) => {
     collection = coll;
-    getRepoData('fbsamples', 'messenger-platform-samples');
+    repos.forEach(repo_info => {
+      getRepoData(repo_info.org, repo_info.name);  
+    })
     
   })  
   
