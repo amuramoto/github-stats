@@ -10,6 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "mongodb": "^3.0.0-rc0",
+    "nodemon": "^1.12.5",
     "request": "^2.83.0"
   }
 }
