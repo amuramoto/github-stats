@@ -12,11 +12,11 @@ mongodb.connect(mongodb_url, (err, mongo_client) => {
     console.log('Error connecting to Mongo: ' + err);
   }
 
-  let db = mongo_client.db('fb-devrel');
+  let db = mongo_client.db(env.mongo.db);
   console.log("Connected successfully to server");
   
   
-  db.collection('github', (err, coll) => {
+  db.collection(env.mongo.collection, (err, coll) => {
     getRepoData().then(repo_data => {
       console.log(repo_data)  
     });
