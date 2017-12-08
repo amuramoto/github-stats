@@ -6,8 +6,6 @@ const repos = env.repos;
 const mongodb_url = 'mongodb://localhost:27017/fb-devrel';
 const github_api_base_url = 'https://api.github.com';
 
-var collection;
-
 mongodb.connect(mongodb_url, (err, mongo_client) => {
   
   if (err) {
@@ -19,38 +17,47 @@ mongodb.connect(mongodb_url, (err, mongo_client) => {
   
   
   db.collection('github', (err, coll) => {
-    collection = coll;
-    repos.forEach(repo_info => {
-      getRepoData(repo_info.org, repo_info.name);  
-    })
+    getRepoData().then(repo_data => {
+      console.log(repo_data)  
+    });
+    
     
   })  
   
 });
 
-function getRepoData(org, repo) {
+function getRepoData() {
 
-  let document = {}
-  document[repo] = {};
-  let repo_data = {};
-  let stats = getStats(org, repo);   
-  let traffic = getTraffic(org, repo);
+  return new Promise ((resolve, reject) => {    
+    let promise_arr = [];
 
-  Promise.all([stats, traffic]).then(values => {
-    Object.assign(document[repo], values[0], values[1]);
-console.log('ok')
-console.log(document[repo])
-  });
+    repos.forEach(repo_info => {    
+      let repo_data = {};
+      repo_data[repo_info.name] = { 'owner': repo_info.owner };
 
-    // writeDocument(document);    
-  
+      let stats = getStats(repo_info.owner, repo_info.name);   
+      let traffic = getTraffic(repo_info.owner, repo_info.name);
+      
+      let data_promise = new Promise((resolve, reject) => {
+        Promise.all([stats, traffic]).then(data => {        
+          Object.assign(repo_data[repo_info.name], data[0], data[1]);       
+          resolve(repo_data)
+        })
+      });
 
+      promise_arr.push(data_promise);
+    
+    })  
+    Promise.all(promise_arr).then(data => resolve(data))
+
+  })
 }
 
-function getStats (org, repo) {
+
+function getStats (owner, repo) {
   return new Promise((resolve, reject) => {
     let request_options = {
-      "url": `${github_api_base_url}/repos/${org}/${repo}`,
+      "url": `${github_api_base_url}/repos/${owner}/${repo}`,
       "method": "GET",
       "headers": {
         "User-agent": "Github Stats Client"
@@ -60,7 +67,6 @@ function getStats (org, repo) {
     request(request_options, (err, res, body) => {
 
       body = JSON.parse(body);
-      
       let stars = body.stargazers_count;
       let forks = body.forks_count;
       let watchers = body.subscribers_count;
@@ -76,13 +82,11 @@ function getStats (org, repo) {
 
 }
 
-function getTraffic (org, repo) {
+function getTraffic (owner, repo) {
   return new Promise((resolve, reject) => {
-
-
     let token = env.github_token;
     let request_options = {
-      "url": `${github_api_base_url}/repos/${org}/${repo}/traffic/views?per=day`,
+      "url": `${github_api_base_url}/repos/${owner}/${repo}/traffic/views?per=day`,
       "method": "GET",
       "headers": {
         "User-agent": "Github Stats Client",
@@ -90,12 +94,22 @@ function getTraffic (org, repo) {
       }
     }
 
-    request(request_options, (err, res, body) => {
+    request(request_options, (err, res, body) => {      
+      let total_views;
+      let unique_views;
       body = JSON.parse(body);
+
+      if (body.views.length >= 2) {
+        total_views = body.views[body.views.length-2].count;
+        unique_views = body.views[body.views.length-2].uniques;
+      } else {
+        total_views = unique_views = 0;
+      }
+
       let views = {
         'views': {
-          'total': body.views[body.views.length-2].count,
-          'unique': body.views[body.views.length-2].uniques
+          'total': total_views,
+          'unique': unique_views
         }        
       }
       resolve(views);
@@ -104,7 +118,7 @@ function getTraffic (org, repo) {
 
 }
 
-function writeDocument (document) {
+function writeDocument (document, collection) {
   let date = new Date().setHours(0,0,0,0);
   collection.findOne({_id: date}).then(doc => {    
     if (!doc) {
