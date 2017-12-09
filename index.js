@@ -4,7 +4,6 @@ const env = require('./env');
 const repos = env.repos;
 
 const mongodb_url = 'mongodb://localhost:27017/fb-devrel';
-const github_api_base_url = 'https://api.github.com';
 
 mongodb.connect(mongodb_url, (err, mongo_client) => {
   
@@ -25,7 +24,7 @@ mongodb.connect(mongodb_url, (err, mongo_client) => {
   
 });
 
-function getRepoData() {
+async function getRepoData() {
 
   return new Promise ((resolve, reject) => {    
     let promise_arr = [];
@@ -81,27 +80,12 @@ async function getStats (owner, repo) {
     };
 }
 
-async function callGitHubAPI (path) {
-  let token = env.github_token;
-  let request_options = {
-      "url": `${github_api_base_url}${path}`,
-      "method": "GET",
-      "headers": {
-        "User-agent": "Github Stats Client",
-        'Authorization': 'token ' + token 
-      }
-    }
-
-    let response = await request(request_options);    
-    return response;
-}
-
 async function getTraffic (owner, repo) {
     let github_path = `/repos/${owner}/${repo}/traffic/views?per=day`
     let traffic = await callGitHubAPI(github_path);    
     traffic = JSON.parse(traffic);
     return { 
-      'trafic': {
+      'traffic': {
         'total': traffic.count,
         'uniques': traffic.uniques,
         'daily': parseYesterday(traffic.views)
@@ -115,50 +99,27 @@ async function getClones (owner, repo) {
     let github_path = `/repos/${owner}/${repo}/traffic/clones?per=day`;
     let clones = await callGitHubAPI(github_path);    
     clones = JSON.parse(clones)
-    return {
-      'total': body.count,
-      'uniques': body.uniques,
-      'daily': parseYesterday(body.clones)
-    }
-    
-}
-
-function getPaths (owner, repo) {
-  return new Promise((resolve, reject) => {
-    let token = env.github_token;
-    let request_options = {
-      "url": `${github_api_base_url}/repos/${owner}/${repo}/traffic/popular/paths`,
-      "method": "GET",
-      "headers": {
-        "User-agent": "Github Stats Client",
-        'Authorization': 'token ' + token 
+    return { 
+      'clones': {
+        'total': clones.count,
+        'uniques': clones.uniques,
+        'daily': parseYesterday(clones.clones)
       }
     }
-   
-    request(request_options, (err, res, body) => {
-      body = JSON.parse(body);      
-      resolve({'paths': body});                
-    });
-  });
 }
 
-function getReferrers (owner, repo) {
-  return new Promise((resolve, reject) => {
-    let token = env.github_token;
-    let request_options = {
-      "url": `${github_api_base_url}/repos/${owner}/${repo}/traffic/popular/referrers`,
-      "method": "GET",
-      "headers": {
-        "User-agent": "Github Stats Client",
-        'Authorization': 'token ' + token 
-      }
-    }
-   
-    request(request_options, (err, res, body) => {
-      body = JSON.parse(body);      
-      resolve({'referrers': body});                
-    });
-  });
+async function getPaths (owner, repo) {
+  let github_path = `/repos/${owner}/${repo}/traffic/popular/paths`;
+  let paths = await callGitHubAPI(github_path);    
+  paths = JSON.parse(paths)
+  return { 'paths': paths };
+}
+
+async function getReferrers (owner, repo) {
+  let github_path = `/repos/${owner}/${repo}/traffic/popular/referrers`;
+  let referrers = await callGitHubAPI(github_path);
+  referrers = JSON.parse(referrers);      
+  return { 'referrers': referrers };
 }
 
 function parseYesterday(data_arr) {
@@ -180,6 +141,21 @@ function parseYesterday(data_arr) {
   return daily_stats;
 }
 
+async function callGitHubAPI (path) {
+  const github_api_base_url = 'https://api.github.com';
+  const token = env.github_token;
+  let request_options = {
+      "url": `${github_api_base_url}${path}`,
+      "method": "GET",
+      "headers": {
+        "User-agent": "Github Stats Client",
+        'Authorization': 'token ' + token 
+      }
+    }
+
+    let response = await request(request_options);    
+    return response;
+}
 
 function writeDocument (repo_data, collection) {
   let date = new Date().setUTCHours(0,0,0,0);
