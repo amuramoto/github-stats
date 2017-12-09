@@ -1,4 +1,4 @@
-const request = require('request');
+const request = require('request-promise');
 const mongodb = require('mongodb');
 const env = require('./env');
 const repos = env.repos;
@@ -16,12 +16,11 @@ mongodb.connect(mongodb_url, (err, mongo_client) => {
   console.log("Connected successfully to server");
   
   
-  db.collection(env.mongo.collection, (err, coll) => {
+  db.collection(env.mongo.collection, (err, collection) => {
     getRepoData().then(repo_data => {
-      console.log(repo_data)  
-    });
-    
-    
+      console.log(repo_data)
+      // writeDocument(repo_data, collection);
+    });    
   })  
   
 });
@@ -37,10 +36,12 @@ function getRepoData() {
 
       let stats = getStats(repo_info.owner, repo_info.name);   
       let traffic = getTraffic(repo_info.owner, repo_info.name);
-      
+      let clones = getClones(repo_info.owner, repo_info.name);
+      let paths = getPaths(repo_info.owner, repo_info.name);
+      let referrers = getReferrers(repo_info.owner, repo_info.name);
       let data_promise = new Promise((resolve, reject) => {
-        Promise.all([stats, traffic]).then(data => {        
-          Object.assign(repo_data[repo_info.name], data[0], data[1]);       
+        Promise.all([stats, traffic, clones, paths, referrers]).then(data => {        
+          Object.assign(repo_data[repo_info.name], data[0], data[1], data[2], data[3], data[4]);       
           resolve(repo_data)
         })
       });
@@ -53,40 +54,37 @@ function getRepoData() {
   })
 }
 
-
-function getStats (owner, repo) {
-  return new Promise((resolve, reject) => {
-    let request_options = {
-      "url": `${github_api_base_url}/repos/${owner}/${repo}`,
-      "method": "GET",
-      "headers": {
-        "User-agent": "Github Stats Client"
-      }
+function parseRepoData (repo_data) {  
+  let document = {};  
+  
+  for (i = 0; i < repo_data.length; i++) {
+    for (let repo in repo_data[i]) {            
+      // repo_data[i][repo].views = parseViewsData(repo_data[i][repo].views);
     }
-
-    request(request_options, (err, res, body) => {
-
-      body = JSON.parse(body);
-      let stars = body.stargazers_count;
-      let forks = body.forks_count;
-      let watchers = body.subscribers_count;
-      let stats =  {
-        "watchers": watchers,
-        "stars": stars,
-        "forks": forks          
-      };
-
-      resolve(stats);
-    });
-  });
-
+  }
+  // console.log(repo_data)
 }
 
-function getTraffic (owner, repo) {
-  return new Promise((resolve, reject) => {
-    let token = env.github_token;
-    let request_options = {
-      "url": `${github_api_base_url}/repos/${owner}/${repo}/traffic/views?per=day`,
+
+async function getStats (owner, repo) {
+    let github_path = `/repos/${owner}/${repo}`
+    let repo_info = await callGitHubAPI(github_path);
+    
+    repo_info = JSON.parse(repo_info);      
+    let stars = repo_info.stargazers_count;
+    let forks = repo_info.forks_count;
+    let watchers = repo_info.subscribers_count;
+    return  {
+      "watchers": watchers,
+      "stars": stars,
+      "forks": forks          
+    };
+}
+
+async function callGitHubAPI (path) {
+  let token = env.github_token;
+  let request_options = {
+      "url": `${github_api_base_url}${path}`,
       "method": "GET",
       "headers": {
         "User-agent": "Github Stats Client",
@@ -94,35 +92,106 @@ function getTraffic (owner, repo) {
       }
     }
 
-    request(request_options, (err, res, body) => {      
-      let total_views;
-      let unique_views;
-      body = JSON.parse(body);
+    let response = await request(request_options);    
+    return response;
+}
 
-      if (body.views.length >= 2) {
-        total_views = body.views[body.views.length-2].count;
-        unique_views = body.views[body.views.length-2].uniques;
-      } else {
-        total_views = unique_views = 0;
+async function getTraffic (owner, repo) {
+    let github_path = `/repos/${owner}/${repo}/traffic/views?per=day`
+    let traffic = await callGitHubAPI(github_path);    
+    traffic = JSON.parse(traffic);
+    return { 
+      'trafic': {
+        'total': traffic.count,
+        'uniques': traffic.uniques,
+        'daily': parseYesterday(traffic.views)
       }
-
-      let views = {
-        'views': {
-          'total': total_views,
-          'unique': unique_views
-        }        
-      }
-      resolve(views);
-    })
-  })
+    }
 
 }
 
-function writeDocument (document, collection) {
-  let date = new Date().setHours(0,0,0,0);
+async function getClones (owner, repo) {
+    
+    let github_path = `/repos/${owner}/${repo}/traffic/clones?per=day`;
+    let clones = await callGitHubAPI(github_path);    
+    clones = JSON.parse(clones)
+    return {
+      'total': body.count,
+      'uniques': body.uniques,
+      'daily': parseYesterday(body.clones)
+    }
+    
+}
+
+function getPaths (owner, repo) {
+  return new Promise((resolve, reject) => {
+    let token = env.github_token;
+    let request_options = {
+      "url": `${github_api_base_url}/repos/${owner}/${repo}/traffic/popular/paths`,
+      "method": "GET",
+      "headers": {
+        "User-agent": "Github Stats Client",
+        'Authorization': 'token ' + token 
+      }
+    }
+   
+    request(request_options, (err, res, body) => {
+      body = JSON.parse(body);      
+      resolve({'paths': body});                
+    });
+  });
+}
+
+function getReferrers (owner, repo) {
+  return new Promise((resolve, reject) => {
+    let token = env.github_token;
+    let request_options = {
+      "url": `${github_api_base_url}/repos/${owner}/${repo}/traffic/popular/referrers`,
+      "method": "GET",
+      "headers": {
+        "User-agent": "Github Stats Client",
+        'Authorization': 'token ' + token 
+      }
+    }
+   
+    request(request_options, (err, res, body) => {
+      body = JSON.parse(body);      
+      resolve({'referrers': body});                
+    });
+  });
+}
+
+function parseYesterday(data_arr) {
+  
+  let date = new Date().setUTCHours(0,0,0,0);  
+  let daily_stats = {
+    'total': 0,
+    'uniques': 0
+  }
+
+  for (let i = data_arr.length - 1; i >= 0; i--) {    
+    if (new Date(data_arr[i].timestamp).getTime() === date - 86400000) {
+      daily_stats.total = data_arr[i].count;
+      daily_stats.unique = data_arr[i].uniques;      
+      break;
+    }
+  }
+  
+  return daily_stats;
+}
+
+
+function writeDocument (repo_data, collection) {
+  let date = new Date().setUTCHours(0,0,0,0);
+ 
+  // for (let i = 0; i < repo_data.length; i ++) {
+  //   let views = parseRepoData(repo_data[i], date);
+  //   repo_data[i].views = views;
+  // }
+
   collection.findOne({_id: date}).then(doc => {    
     if (!doc) {
-      document["_id"] = date;    
+      document["_id"] = date;
       collection.insertOne(document);
     } else {
       collection.updateOne({_id: date}, {$set: document});
