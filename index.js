@@ -11,46 +11,33 @@ mongodb.connect(mongodb_url, (err, mongo_client) => {
     console.log('Error connecting to Mongo: ' + err);
   }
 
-  let db = mongo_client.db(env.mongo.db);
+  let db = mongo_client.db(env.mongo_db);
   console.log("Connected successfully to server");
   
   
-  db.collection(env.mongo.collection, (err, collection) => {
-    getRepoData().then(repo_data => {
-      console.log(repo_data)
-      // writeDocument(repo_data, collection);
-    });    
-  })  
+  repos.forEach(repo_info => {    
+
+    db.collection(repo_info.name, (err, collection) => {
+      getRepoData(repo_info.owner, repo_info.name).then(repo_data => {
+        console.log(repo_data)
+        // writeDocument(repo_data, collection);
+      });    
+    })  
+  });
   
 });
 
-async function getRepoData() {
-
-  return new Promise ((resolve, reject) => {    
-    let promise_arr = [];
-
-    repos.forEach(repo_info => {    
-      let repo_data = {};
-      repo_data[repo_info.name] = { 'owner': repo_info.owner };
-
-      let stats = getStats(repo_info.owner, repo_info.name);   
-      let traffic = getTraffic(repo_info.owner, repo_info.name);
-      let clones = getClones(repo_info.owner, repo_info.name);
-      let paths = getPaths(repo_info.owner, repo_info.name);
-      let referrers = getReferrers(repo_info.owner, repo_info.name);
-      let data_promise = new Promise((resolve, reject) => {
-        Promise.all([stats, traffic, clones, paths, referrers]).then(data => {        
-          Object.assign(repo_data[repo_info.name], data[0], data[1], data[2], data[3], data[4]);       
-          resolve(repo_data)
-        })
-      });
-
-      promise_arr.push(data_promise);
-    
-    })  
-    Promise.all(promise_arr).then(data => resolve(data))
-
-  })
+async function getRepoData(owner, name) {
+  let repo_data = { 
+    'name': name,
+    'owner': owner 
+  };
+  let stats = await getStats(owner, name);   
+  let traffic = await getTraffic(owner, name);
+  let clones = await getClones(owner, name);
+  let paths = await getPaths(owner, name);
+  let referrers = await getReferrers(owner, name);
+  return Object.assign(repo_data, stats, traffic, clones, paths, referrers);     
 }
 
 function parseRepoData (repo_data) {  
@@ -83,14 +70,7 @@ async function getStats (owner, repo) {
 async function getTraffic (owner, repo) {
     let github_path = `/repos/${owner}/${repo}/traffic/views?per=day`
     let traffic = await callGitHubAPI(github_path);    
-    traffic = JSON.parse(traffic);
-    return { 
-      'traffic': {
-        'total': traffic.count,
-        'uniques': traffic.uniques,
-        'daily': parseYesterday(traffic.views)
-      }
-    }
+    return JSON.parse(traffic);
 
 }
 
@@ -98,14 +78,7 @@ async function getClones (owner, repo) {
     
     let github_path = `/repos/${owner}/${repo}/traffic/clones?per=day`;
     let clones = await callGitHubAPI(github_path);    
-    clones = JSON.parse(clones)
-    return { 
-      'clones': {
-        'total': clones.count,
-        'uniques': clones.uniques,
-        'daily': parseYesterday(clones.clones)
-      }
-    }
+    return JSON.parse(clones);
 }
 
 async function getPaths (owner, repo) {
