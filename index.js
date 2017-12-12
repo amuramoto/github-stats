@@ -1,37 +1,45 @@
 const request = require('request-promise');
 const mongodb = require('mongodb');
 const env = require('./env');
-const repos = env.repos;
+
 
 const mongodb_url = 'mongodb://localhost:27017/fb-devrel';
 
 mongodb.connect(mongodb_url, (err, mongo_client) => {
+
+  const repos = env.repos;
   
   if (err) {
     console.log('Error connecting to Mongo: ' + err);
   }
 
-  let db = mongo_client.db(env.mongo_db);
+  const db = mongo_client.db(env.mongo_db);
   console.log("Connected successfully to server");
   
   
   repos.forEach(repo_info => {    
 
-    db.collection(repo_info.name, (err, collection) => {
+    let date = new Date().setUTCHours(0,0,0,0);
+    db.collection(repo_info.name, {'strict': true}, (err, collection) => {
+      
       getRepoData(repo_info.owner, repo_info.name).then(repo_data => {
         console.log(repo_data)
         // writeDocument(repo_data, collection);
-      });    
+      });
+
+      if (err) {
+
+      } else {
+
+      }
+          
     })  
   });
   
 });
 
 async function getRepoData(owner, name) {
-  let repo_data = { 
-    'name': name,
-    'owner': owner 
-  };
+  let repo_data = {};
   let stats = await getStats(owner, name);   
   let traffic = await getTraffic(owner, name);
   let clones = await getClones(owner, name);
@@ -39,18 +47,6 @@ async function getRepoData(owner, name) {
   let referrers = await getReferrers(owner, name);
   return Object.assign(repo_data, stats, traffic, clones, paths, referrers);     
 }
-
-function parseRepoData (repo_data) {  
-  let document = {};  
-  
-  for (i = 0; i < repo_data.length; i++) {
-    for (let repo in repo_data[i]) {            
-      // repo_data[i][repo].views = parseViewsData(repo_data[i][repo].views);
-    }
-  }
-  // console.log(repo_data)
-}
-
 
 async function getStats (owner, repo) {
     let github_path = `/repos/${owner}/${repo}`
@@ -95,7 +91,7 @@ async function getReferrers (owner, repo) {
   return { 'referrers': referrers };
 }
 
-function parseYesterday(data_arr) {
+function parseDaily(data_arr) {
   
   let date = new Date().setUTCHours(0,0,0,0);  
   let daily_stats = {
@@ -130,8 +126,13 @@ async function callGitHubAPI (path) {
     return response;
 }
 
+function createDocument () {
+
+}
+
+
 function writeDocument (repo_data, collection) {
-  let date = new Date().setUTCHours(0,0,0,0);
+  
  
   // for (let i = 0; i < repo_data.length; i ++) {
   //   let views = parseRepoData(repo_data[i], date);
