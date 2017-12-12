@@ -1,11 +1,10 @@
-const request = require('request-promise');
-const mongodb = require('mongodb');
-const env = require('./env');
+const request = require('request-promise'),
+      mongodb = require('mongodb'),      
+      env = require('./env'),
+      mongodb_info = 'mongodb://' + env.mongo.address;
 
-
-const mongodb_url = 'mongodb://localhost:27017/fb-devrel';
-
-mongodb.connect(mongodb_url, (err, mongo_client) => {
+// connect to mongodb
+mongodb.connect(mongodb_info, (err, mongo_client) => {
 
   const repos = env.repos;
   
@@ -13,13 +12,12 @@ mongodb.connect(mongodb_url, (err, mongo_client) => {
     console.log('Error connecting to Mongo: ' + err);
   }
 
-  const db = mongo_client.db(env.mongo_db);
+  const db = mongo_client.db(env.mongo.db_name);
   console.log("Connected successfully to server");
   
   
   repos.forEach(repo_info => {    
 
-    let date = new Date().setUTCHours(0,0,0,0);
     db.collection(repo_info.name, {'strict': true}, (err, collection) => {
       
       getRepoData(repo_info.owner, repo_info.name).then(repo_data => {
@@ -28,6 +26,7 @@ mongodb.connect(mongodb_url, (err, mongo_client) => {
       });
 
       if (err) {
+        let date = new Date().setUTCHours(0,0,0,0);
 
       } else {
 
