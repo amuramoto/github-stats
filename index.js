@@ -4,38 +4,48 @@ const request = require('request-promise'),
       mongodb_info = 'mongodb://' + env.mongo.address;
 
 // connect to mongodb
-mongodb.connect(mongodb_info, (err, mongo_client) => {
+mongodb.connect(mongodb_info, async (err, mongo_client) => {
 
-  const repos = env.repos;
-  
   if (err) {
     console.log('Error connecting to Mongo: ' + err);
+    return;
   }
 
-  const db = mongo_client.db(env.mongo.db_name);
   console.log("Connected successfully to server");
-  
-  
-  repos.forEach(repo_info => {    
+  let collection
+  let db = mongo_client.db(env.mongo.db_name);
+  let repo_data = await getRepos();
+  for (let name in repo_data) {    
+    let documents;
+    collection = await db.collection(name);
+    
+    try {
+      // collection already exists
+      await collection.stats()  
 
-    db.collection(repo_info.name, {'strict': true}, (err, collection) => {
-      
-      getRepoData(repo_info.owner, repo_info.name).then(repo_data => {
-        console.log(repo_data)
-        // writeDocument(repo_data, collection);
-      });
-
-      if (err) {
-        let date = new Date().setUTCHours(0,0,0,0);
-
-      } else {
-
+      //create document for yesterday
+      documents = createDocuments(1, repo_data[name]);
+    } catch (err) {
+      // collection is new
+      let available_days = repo_data[name].traffic.length;
+      if (available_days > 0) {
+        // create documents for all available days
+        documents = createDocuments(available_days, repo_data[name]);        
       }
-          
-    })  
-  });
-  
+    }
+    
+    // writeDocuments(documents, collection);
+  }  
 });
+
+async function getRepos() {
+  const repos = env.repos;
+  const repo_data = {};
+  for (let repo_info of repos) {    
+    repo_data[repo_info.name] = await getRepoData(repo_info.owner, repo_info.name);    
+  }  
+  return repo_data;
+}
 
 async function getRepoData(owner, name) {
   let repo_data = {};
@@ -44,6 +54,7 @@ async function getRepoData(owner, name) {
   let clones = await getClones(owner, name);
   let paths = await getPaths(owner, name);
   let referrers = await getReferrers(owner, name);
+
   return Object.assign(repo_data, stats, traffic, clones, paths, referrers);     
 }
 
@@ -63,17 +74,55 @@ async function getStats (owner, repo) {
 }
 
 async function getTraffic (owner, repo) {
-    let github_path = `/repos/${owner}/${repo}/traffic/views?per=day`
-    let traffic = await callGitHubAPI(github_path);    
-    return JSON.parse(traffic);
+  let total_count;
+  let total_uniques;
+  let github_path = `/repos/${owner}/${repo}/traffic/views?per=day`
+  let traffic = await callGitHubAPI(github_path);    
+  traffic = JSON.parse(traffic);
+  total_count = traffic.count;
+  total_uniques = traffic.uniques;
+  
+  for (let i = traffic.views.length - 1; i >=0; i--) {
+    
+    traffic.views[i]['total_count'] = total_count;
+    traffic.views[i]['total_uniques'] = total_uniques;
+
+    // decrement totals
+    total_count -= traffic.views[i].count;
+    total_uniques -= traffic.views[i].uniques;
+  }
+
+  // remove today since it is not complete
+  traffic.views.pop();
+
+  return { 'traffic': traffic.views };
 
 }
 
-async function getClones (owner, repo) {
+async function getClones (owner, repo) {    
+  let clones; 
+  let total_count;
+  let total_uniques;
+  let github_path = `/repos/${owner}/${repo}/traffic/clones?per=day`;
+  let res = await callGitHubAPI(github_path);    
+  res = JSON.parse(res); 
+  total_count = res.count;
+  total_uniques = res.uniques;
+  clones = res.clones;    
+  
+  for (let i = clones.length - 1; i >=0; i--) {
     
-    let github_path = `/repos/${owner}/${repo}/traffic/clones?per=day`;
-    let clones = await callGitHubAPI(github_path);    
-    return JSON.parse(clones);
+    clones[i]['total_count'] = total_count;
+    clones[i]['total_uniques'] = total_uniques;
+
+    // decrement totals
+    total_count -= clones[i].count;
+    total_uniques -= clones[i].uniques;
+  }
+
+  // remove today since it is not complete
+  clones.pop();    
+  return { 'clones': clones };
 }
 
 async function getPaths (owner, repo) {
@@ -88,25 +137,6 @@ async function getReferrers (owner, repo) {
   let referrers = await callGitHubAPI(github_path);
   referrers = JSON.parse(referrers);      
   return { 'referrers': referrers };
-}
-
-function parseDaily(data_arr) {
-  
-  let date = new Date().setUTCHours(0,0,0,0);  
-  let daily_stats = {
-    'total': 0,
-    'uniques': 0
-  }
-
-  for (let i = data_arr.length - 1; i >= 0; i--) {    
-    if (new Date(data_arr[i].timestamp).getTime() === date - 86400000) {
-      daily_stats.total = data_arr[i].count;
-      daily_stats.unique = data_arr[i].uniques;      
-      break;
-    }
-  }
-  
-  return daily_stats;
 }
 
 async function callGitHubAPI (path) {
@@ -125,25 +155,36 @@ async function callGitHubAPI (path) {
     return response;
 }
 
-function createDocument () {
+function createDocuments (num_days, repo_data) {
+  let documents = [];
+    
+  let available_days = repo_data.traffic.length;
+  let clones = repo_data.clones;
+  let traffic = repo_data.traffic;
 
+  for (let i = repo_data.traffic.length; i < repo_data.traffic.length; i++) {
+    console.log(repo_data)
+    let document = repo_data;
+    document.traffic = repo_data.traffic[i];
+    document.clones = repo_data.clones[i];
+    console.log('document')
+    console.log(document)
+    documents.push(document);
+  }
+  console.log(documents)
+  // for (let i = available_days - num_days ; i < available_days; i++) {
+  //   let document = repo_data;  
+  //   console.log(new Date(traffic[i].timestamp).getTime());
+  //   document._id = new Date(traffic[i].timestamp).getTime();
+    
+  //   documents.push(document);
+  // }  
+  return documents;
 }
 
-
-function writeDocument (repo_data, collection) {
+function writeDocuments (documents, collection) {
   
+ // console.log(documents);
+      // collection.insertOne(document);
  
-  // for (let i = 0; i < repo_data.length; i ++) {
-  //   let views = parseRepoData(repo_data[i], date);
-  //   repo_data[i].views = views;
-  // }
-
-  collection.findOne({_id: date}).then(doc => {    
-    if (!doc) {
-      document["_id"] = date;
-      collection.insertOne(document);
-    } else {
-      collection.updateOne({_id: date}, {$set: document});
-    }
-  });
 }
