@@ -18,20 +18,19 @@ mongodb.connect(mongodb_info, async (err, mongo_client) => {
   for (let name in repo_data) {    
     let documents;
     collection = await db.collection(name);
-    
+    documents = createDocuments(repo_data[name]);      
+
     try {
       // collection already exists
       await collection.stats()  
-
       //create document for yesterday
-      documents = createDocuments(1, repo_data[name]);
+      collection.insertOne(documents.pop(), (err, res) => {console.log('ok')});      
     } catch (err) {
-      // collection is new
-      let available_days = repo_data[name].traffic.length;
-      if (available_days > 0) {
-        // create documents for all available days
-        documents = createDocuments(available_days, repo_data[name]);        
-      }
+        // collection is new - create documents for all dates
+        documents.forEach(document => {
+          collection.insertOne(document, (err, res) => {console.log('ok')}); 
+       
+        })
     }
     
     // writeDocuments(documents, collection);
@@ -155,36 +154,22 @@ async function callGitHubAPI (path) {
     return response;
 }
 
-function createDocuments (num_days, repo_data) {
+function createDocuments (repo_data) {
   let documents = [];
-    
-  let available_days = repo_data.traffic.length;
-  let clones = repo_data.clones;
-  let traffic = repo_data.traffic;
 
-  for (let i = repo_data.traffic.length; i < repo_data.traffic.length; i++) {
-    console.log(repo_data)
-    let document = repo_data;
+  for (let i = 0; i < repo_data.traffic.length; i++) {    
+    let document = JSON.parse(JSON.stringify(repo_data));
     document.traffic = repo_data.traffic[i];
     document.clones = repo_data.clones[i];
-    console.log('document')
-    console.log(document)
+    document._id = new Date(repo_data.traffic[i].timestamp).getTime();
     documents.push(document);
   }
-  console.log(documents)
-  // for (let i = available_days - num_days ; i < available_days; i++) {
-  //   let document = repo_data;  
-  //   console.log(new Date(traffic[i].timestamp).getTime());
-  //   document._id = new Date(traffic[i].timestamp).getTime();
-    
-  //   documents.push(document);
-  // }  
+
   return documents;
 }
 
 function writeDocuments (documents, collection) {
-  
- // console.log(documents);
-      // collection.insertOne(document);
+ 
+  // documents.forEach(document => collection.insertOne(document);)
  
 }
