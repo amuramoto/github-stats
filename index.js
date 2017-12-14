@@ -10,31 +10,8 @@ mongodb.connect(mongodb_info, async (err, mongo_client) => {
     console.log('Error connecting to Mongo: ' + err);
     return;
   }
-
-  console.log("Connected successfully to server");
-  let collection
-  let db = mongo_client.db(env.mongo.db_name);
-  let repo_data = await getRepos();
-  for (let name in repo_data) {    
-    let documents;
-    collection = await db.collection(name);
-    documents = createDocuments(repo_data[name]);      
-
-    try {
-      // collection already exists
-      await collection.stats()  
-      //create document for yesterday
-      collection.insertOne(documents.pop(), (err, res) => {console.log('ok')});      
-    } catch (err) {
-        // collection is new - create documents for all dates
-        documents.forEach(document => {
-          collection.insertOne(document, (err, res) => {console.log('ok')}); 
-       
-        })
-    }
-    
-    // writeDocuments(documents, collection);
-  }  
+  console.log("Connected successfully to server");  
+  update(mongo_client.db(env.mongo.db_name));  
 });
 
 async function getRepos() {
@@ -168,8 +145,17 @@ function createDocuments (repo_data) {
   return documents;
 }
 
-function writeDocuments (documents, collection) {
- 
-  // documents.forEach(document => collection.insertOne(document);)
- 
+async function update (db) {
+  let repo_data = await getRepos();
+  for (let name in repo_data) {    
+    let documents = createDocuments(repo_data[name]);
+    collection = await db.collection(name);      
+    documents.forEach(document => {
+      collection.findOne({_id: document._id}).then(res => {
+        if (!res) {
+          collection.insertOne(document, (err, res) => {console.log(document)});
+        }
+      })
+    });
+  } 
 }
